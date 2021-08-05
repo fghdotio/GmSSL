@@ -46,23 +46,80 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* +build cgo */
-package gmssl
+package gmms
 
 /*
-#include <openssl/crypto.h>
+#include <openssl/hmac.h>
+#include <openssl/cmac.h>
 */
 import "C"
 
-func GetVersions() []string {
-	versions := []string {
-		"GmSSL Go API 1.6  Aug 7 2018",
-		C.GoString(C.OpenSSL_version(C.OPENSSL_VERSION)),
-		C.GoString(C.OpenSSL_version(C.OPENSSL_BUILT_ON)),
-		C.GoString(C.OpenSSL_version(C.OPENSSL_CFLAGS)),
-		C.GoString(C.OpenSSL_version(C.OPENSSL_PLATFORM)),
-		C.GoString(C.OpenSSL_version(C.OPENSSL_DIR)),
-		C.GoString(C.OpenSSL_version(C.OPENSSL_ENGINES_DIR)),
+import (
+	"runtime"
+	"unsafe"
+)
+
+func GetMacLength(name string) (int, error) {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	md := C.EVP_get_digestbyname(cname)
+	if md == nil {
+		return 0, GetErrors()
 	}
-	return versions
+	return int(C.EVP_MD_size(md)), nil
+}
+
+type HMACContext struct {
+	hctx *C.HMAC_CTX
+}
+
+func NewHMACContext(name string, key []byte) (
+	*HMACContext, error) {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	md := C.EVP_get_digestbyname(cname)
+	if md == nil {
+		return nil, GetErrors()
+	}
+	ctx := C.HMAC_CTX_new()
+	if ctx == nil {
+		return nil, GetErrors()
+	}
+	ret := &HMACContext{ctx}
+	runtime.SetFinalizer(ret, func(ret *HMACContext) {
+		C.HMAC_CTX_free(ret.hctx)
+	})
+	if 1 != C.HMAC_Init_ex(ctx,
+		unsafe.Pointer(&key[0]), C.int(len(key)), md, nil) {
+		return nil, GetErrors()
+	}
+	return ret, nil
+}
+
+func (ctx *HMACContext) Update(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if 1 != C.HMAC_Update(ctx.hctx,
+		(*C.uchar)(unsafe.Pointer(&data[0])), C.size_t(len(data))) {
+		return GetErrors()
+	}
+	return nil
+}
+
+func (ctx *HMACContext) Final() ([]byte, error) {
+	outbuf := make([]byte, 64)
+	outlen := C.uint(len(outbuf))
+	if 1 != C.HMAC_Final(ctx.hctx,
+		(*C.uchar)(unsafe.Pointer(&outbuf[0])), &outlen) {
+		return nil, GetErrors()
+	}
+	return outbuf[:outlen], nil
+}
+
+func (ctx *HMACContext) Reset() error {
+	if 1 != C.HMAC_Init_ex(ctx.hctx, nil, 0, nil, nil) {
+		return GetErrors()
+	}
+	return nil
 }

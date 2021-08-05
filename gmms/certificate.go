@@ -46,8 +46,7 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* +build cgo */
-package gmssl
+package gmms
 
 /*
 #include <stdio.h>
@@ -69,8 +68,8 @@ import "C"
 
 import (
 	"fmt"
-	"unsafe"
 	"runtime"
+	"unsafe"
 )
 
 type Certificate struct {

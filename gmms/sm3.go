@@ -46,27 +46,56 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* +build cgo */
-package gmssl
-
-/*
-#include <openssl/rand.h>
-*/
-import "C"
+package gmms
 
 import (
-	"unsafe"
+	"hash"
 )
 
-func SeedRandom(seed []byte) error {
-	C.RAND_seed(unsafe.Pointer(&seed[0]), C.int(len(seed)))
-	return nil
+type digest struct {
+	ctx *DigestContext
 }
 
-func GenerateRandom(length int) ([]byte, error) {
-	outbuf := make([]byte, length)
-	if C.RAND_bytes((*C.uchar)(&outbuf[0]), C.int(length)) <= 0 {
-		return nil, GetErrors()
+func New() hash.Hash {
+	d := new(digest)
+	ctx, err := NewDigestContext("SM3")
+	if err != nil {
+		return nil
 	}
-	return outbuf[:length], nil
+	d.ctx = ctx
+	return d
+}
+
+func (d *digest) BlockSize() int {
+	ret, err := GetDigestBlockSize("SM3")
+	if err != nil {
+		return 0
+	}
+	return ret
+}
+
+func (d *digest) Size() int {
+	ret, err := GetDigestLength("SM3")
+	if err != nil {
+		return 0
+	}
+	return ret
+}
+
+func (d *digest) Reset() {
+	_ = d.ctx.Reset()
+}
+
+func (d *digest) Write(p []byte) (int, error) {
+	err := d.ctx.Update(p)
+	return len(p), err
+}
+
+func (d *digest) Sum(in []byte) []byte {
+	d.ctx.Update(in)
+	ret, err := d.ctx.Final()
+	if err != nil {
+		return nil
+	}
+	return ret
 }

@@ -46,134 +46,103 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* +build cgo */
-
-package gmssl
+package gmms
 
 /*
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <openssl/evp.h>
+#include <openssl/ui.h>
 #include <openssl/err.h>
-#include <openssl/crypto.h>
-
-static void cb_digest_names_len(const EVP_MD *md, const char *from,
-	const char *to,
-	void *x) {
-	if (md) {
-		*((int *)x) += strlen(EVP_MD_name(md)) + 1;
-	}
-}
-
-static void cb_digest_names(const EVP_MD *md, const char *from,
-	const char *to, void *x) {
-	if (md) {
-		if (strlen((char *)x) > 0) {
-			strcat((char *)x, ":");
-		}
-		strcat((char *)x, EVP_MD_name(md));
-	}
-}
-
-static char *get_digest_names() {
-	char *ret = NULL;
-	int len = 0;
-	EVP_MD_do_all_sorted(cb_digest_names_len, &len);
-	if (!(ret = OPENSSL_zalloc(len))) {
-		return NULL;
-	}
-	EVP_MD_do_all_sorted(cb_digest_names, ret);
-	return ret;
-}
-
-extern void _OPENSSL_free(void *addr);
+#include <openssl/evp.h>
+#include <openssl/engine.h>
 */
 import "C"
 
 import (
-	"unsafe"
+	"errors"
 	"runtime"
-	"strings"
+	"unsafe"
 )
 
-func GetDigestNames() []string {
-	cnames := C.get_digest_names()
-	defer C._OPENSSL_free(unsafe.Pointer(cnames))
-	return strings.Split(C.GoString(cnames), ":")
-}
-
-func GetDigestLength(name string) (int, error) {
-	cname := C.CString(name)
-	defer C.free(unsafe.Pointer(cname))
-	md := C.EVP_get_digestbyname(cname)
-	if md == nil {
-		return 0, GetErrors()
+func GetEngineNames() []string {
+	engines := []string{}
+	C.ENGINE_load_builtin_engines()
+	eng := C.ENGINE_get_first()
+	for {
+		if eng == nil {
+			break
+		}
+		engines = append(engines, C.GoString(C.ENGINE_get_id(eng)))
+		eng = C.ENGINE_get_next(eng)
 	}
-	return int(C.EVP_MD_size(md)), nil
+	C.ENGINE_free(eng)
+	return engines
 }
 
-func GetDigestBlockSize(name string) (int, error) {
+type Engine struct {
+	engine *C.ENGINE
+}
+
+func NewEngineByName(name string) (*Engine, error) {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	md := C.EVP_get_digestbyname(cname)
-	if md == nil {
-		return 0, GetErrors()
-	}
-	return int(C.EVP_MD_block_size(md)), nil
-}
-
-type DigestContext struct {
-	ctx *C.EVP_MD_CTX
-}
-
-func NewDigestContext(name string) (*DigestContext, error) {
-	cname := C.CString(name)
-	defer C.free(unsafe.Pointer(cname))
-	md := C.EVP_get_digestbyname(cname)
-	if md == nil {
+	eng := C.ENGINE_by_id(cname)
+	if eng == nil {
 		return nil, GetErrors()
 	}
-	ctx := C.EVP_MD_CTX_new()
-	if ctx == nil {
-		return nil, GetErrors()
-	}
-	ret := &DigestContext{ctx}
-	runtime.SetFinalizer(ret, func(ret *DigestContext) {
-		C.EVP_MD_CTX_free(ret.ctx)
+	ret := &Engine{eng}
+	runtime.SetFinalizer(ret, func(ret *Engine) {
+		C.ENGINE_finish(ret.engine)
 	})
-	if 1 != C.EVP_DigestInit_ex(ctx, md, nil) {
+	if 1 != C.ENGINE_init(eng) {
 		return nil, GetErrors()
 	}
 	return ret, nil
 }
 
-func (ctx *DigestContext) Update(data []byte) error {
-	if len(data) == 0 {
-		return nil
-	}
-	if 1 != C.EVP_DigestUpdate(ctx.ctx, unsafe.Pointer(&data[0]),
-		C.size_t(len(data))) {
+func (e *Engine) GetCommands() ([]string, error) {
+	return []string{"SO_PATH"}, nil
+}
+
+func (e *Engine) RunCommand(name, arg string) error {
+	cname := C.CString(name)
+	defer C.free(unsafe.Pointer(cname))
+	carg := C.CString(arg)
+	defer C.free(unsafe.Pointer(carg))
+	if 1 != C.ENGINE_ctrl_cmd_string(e.engine, cname, carg, 0) {
 		return GetErrors()
 	}
 	return nil
 }
 
-func (ctx *DigestContext) Final() ([]byte, error) {
-	outbuf := make([]byte, 64)
-	outlen := C.uint(len(outbuf))
-	if 1 != C.EVP_DigestFinal_ex(ctx.ctx,
-		(*C.uchar)(unsafe.Pointer(&outbuf[0])), &outlen) {
+func (e *Engine) LoadConfigFile(path string) error {
+	return errors.New("Engine.LoadConfigFile() not implemented")
+}
+
+func (e *Engine) GetPrivateKey(id string, pass string) (*PrivateKey, error) {
+	cid := C.CString(id)
+	defer C.free(unsafe.Pointer(cid))
+	cpass := C.CString(pass)
+	defer C.free(unsafe.Pointer(cpass))
+	sk := C.ENGINE_load_private_key(e.engine, cid, nil,
+		unsafe.Pointer(cpass))
+	if sk == nil {
 		return nil, GetErrors()
 	}
-	return outbuf[:outlen], nil
+	return &PrivateKey{sk}, nil
 }
 
-func (ctx *DigestContext) Reset() error {
-	md := C.EVP_MD_CTX_md(ctx.ctx)
-	if md == nil {
-		return GetErrors() //FIXME: return some errors
+func (e *Engine) GetPublicKey(id string, pass string) (*PublicKey, error) {
+	cid := C.CString(id)
+	defer C.free(unsafe.Pointer(cid))
+	cpass := C.CString(pass)
+	defer C.free(unsafe.Pointer(cpass))
+
+	pk := C.ENGINE_load_public_key(e.engine, cid, nil,
+		unsafe.Pointer(cpass))
+	if pk == nil {
+		return nil, GetErrors()
 	}
-	if 1 != C.EVP_DigestInit_ex(ctx.ctx, md, nil) {
-		return GetErrors()
-	}
-	return nil
+	return &PublicKey{pk}, nil
 }

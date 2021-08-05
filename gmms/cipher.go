@@ -46,8 +46,7 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* +build cgo */
-package gmssl
+package gmms
 
 /*
 #include <string.h>
@@ -88,9 +87,9 @@ import "C"
 
 import (
 	"errors"
-	"unsafe"
 	"runtime"
 	"strings"
+	"unsafe"
 )
 
 func GetCipherNames() []string {

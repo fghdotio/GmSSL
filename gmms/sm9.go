@@ -46,8 +46,7 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* +build cgo */
-package gmssl
+package gmms
 
 /*
 #include <stdio.h>

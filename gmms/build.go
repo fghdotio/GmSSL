@@ -45,9 +45,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-/* +build cgo */
 
-package gmssl
+package gmms
 
 /*
 #cgo CFLAGS: -I/usr/local/gmssl/include

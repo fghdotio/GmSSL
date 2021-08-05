@@ -46,33 +46,26 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* +build cgo */
-package gmssl
+package gmms
 
 /*
-#include <openssl/err.h>
-#include <openssl/bio.h>
-
-
-extern long _BIO_get_mem_data(BIO *b, char **pp);
+#include <openssl/rand.h>
 */
 import "C"
 
 import (
-	"errors"
+	"unsafe"
 )
 
-func GetErrors() error {
-	bio := C.BIO_new(C.BIO_s_mem())
-	if bio == nil {
-		return errors.New("GetErrors function failure 1")
+func SeedRandom(seed []byte) error {
+	C.RAND_seed(unsafe.Pointer(&seed[0]), C.int(len(seed)))
+	return nil
+}
+
+func GenerateRandom(length int) ([]byte, error) {
+	outbuf := make([]byte, length)
+	if C.RAND_bytes((*C.uchar)(&outbuf[0]), C.int(length)) <= 0 {
+		return nil, GetErrors()
 	}
-	defer C.BIO_free(bio)
-	C.ERR_print_errors(bio)
-	var p *C.char
-	len := C._BIO_get_mem_data(bio, &p)
-	if len <= 0 {
-		return errors.New("GetErrors function failure 2")
-	}
-	return errors.New(C.GoString(p))
+	return outbuf[:length], nil
 }
