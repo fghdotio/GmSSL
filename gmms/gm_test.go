@@ -13,8 +13,12 @@ func TestSM3(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sm3Ctx.Update([]byte("a"))
-	sm3Ctx.Update([]byte("bc"))
+	if err := sm3Ctx.Update([]byte("a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sm3Ctx.Update([]byte("bc")); err != nil {
+		t.Fatal(err)
+	}
 	sm3Digest, err := sm3Ctx.Final()
 	if err != nil {
 		t.Fatal(err)
@@ -22,7 +26,10 @@ func TestSM3(t *testing.T) {
 
 	// SM3 digest with Go hash.Hash API
 	sm3Hash := New()
-	sm3Hash.Write([]byte("abc"))
+	_, err = sm3Hash.Write([]byte("abc"))
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if !bytes.Equal(sm3Digest, sm3Hash.Sum(nil)) {
 		t.Fatal("sm3 error")
@@ -31,42 +38,79 @@ func TestSM3(t *testing.T) {
 }
 
 func TestSM2GenSignVerify(t *testing.T) {
-	/* SM2 key pair operations */
+	// SM2 key pair operations
 	sm2KeyGenArgs := [][2]string{
 		{"ec_paramgen_curve", "sm2p256v1"},
 		{"ec_param_enc", "named_curve"},
 	}
-	sm2sk, _ := GeneratePrivateKey("EC", sm2KeyGenArgs, nil)
-	sm2skString, _ := sm2sk.GetText()
-	sm2skPEM, _ := sm2sk.GetPEM("SMS4", "password")
-	sm2pkPEM, _ := sm2sk.GetPublicKeyPEM()
+	sm2sk, err := GeneratePrivateKey("EC", sm2KeyGenArgs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	fmt.Println(sm2skString)
-	fmt.Println(sm2skPEM)
-	fmt.Println(sm2pkPEM)
+	// sm2skString, err := sm2sk.GetText()
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	// fmt.Printf("sm2 private string (with both private key and public key):\n%s\n\n", sm2skString)
+	sm2skPEM, err := sm2sk.GetPEM("SMS4", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("sm2 encrypted private key pem:\n%s\n", sm2skPEM)
+	sm2pkPEM, err := sm2sk.GetPublicKeyPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("sm2 public key pem:\n%s\n", sm2pkPEM)
 
-	sm2pk, _ := NewPublicKeyFromPEM(sm2pkPEM)
-	sm2pkString, _ := sm2pk.GetText()
-	sm2pkPEMcopy, _ := sm2pk.GetPEM()
+	sm2pk, err := NewPublicKeyFromPEM(sm2pkPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sm2pkString, err := sm2pk.GetText()
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	sm2pkPEMcopy, err := sm2pk.GetPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// fmt.Println(sm2pkString)
+	if sm2pkPEMcopy != sm2pkPEM {
+		t.Fatal("public key not identical")
+	}
 
-	fmt.Println(sm2pkString)
-	fmt.Println(sm2pkPEMcopy)
+	// SM2 sign/verification
+	// #define SM2_DEFAULT_ID_GMT09			"1234567812345678"
+	z, err := sm2pk.ComputeSM2IDDigest("1234567812345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm3Ctx, err := NewDigestContext("SM3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sm3Ctx.Reset()
+	if err := sm3Ctx.Update(z); err != nil {
+		t.Fatal(err)
+	}
+	if err := sm3Ctx.Update([]byte("hhhh")); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := sm3Ctx.Final()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	/* SM2 sign/verification */
-	sm2zid, _ := sm2pk.ComputeSM2IDDigest("1234567812345678")
-	sm3Ctx, _ := NewDigestContext("SM3")
-	sm3Ctx.Reset()
-	sm3Ctx.Update(sm2zid)
-	sm3Ctx.Update([]byte("message"))
-	tbs, _ := sm3Ctx.Final()
+	sig, err := sm2sk.Sign("sm2sign", digest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("sm2sign(sm3(\"hhhh\")) = %x\n", sig)
 
-	sig, _ := sm2sk.Sign("sm2sign", tbs, nil)
-	fmt.Printf("sm2sign(sm3(\"message\")) = %x\n", sig)
-
-	if ret := sm2pk.Verify("sm2sign", tbs, sig, nil); ret != nil {
-		fmt.Printf("sm2 verify failure\n")
-	} else {
-		fmt.Printf("sm2 verify success\n")
+	if err := sm2pk.Verify("sm2sign", digest, sig, nil); err != nil {
+		t.Fatal(err)
 	}
 }
 

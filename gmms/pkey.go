@@ -722,6 +722,7 @@ func GeneratePrivateKey(alg string, args [][2]string, eng *Engine) (*PrivateKey,
 			defer C.free(unsafe.Pointer(cname))
 			cvalue := C.CString(value)
 			defer C.free(unsafe.Pointer(cvalue))
+			// EVP_PKEY_CTX_ctrl_str() allows an application to send an algorithm specific control operation to a context ctx in string form. This is intended to be used for options specified on the command line or in text files. The commands supported are documented in the openssl utility command line pages for the option -pkeyopt which is supported by the pkeyutl, genpkey and req commands.
 			if C.EVP_PKEY_CTX_ctrl_str(ctx, cname, cvalue) <= 0 {
 				return nil, GetErrors()
 			}
