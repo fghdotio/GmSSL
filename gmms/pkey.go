@@ -763,10 +763,6 @@ func NewPrivateKeyFromPEM(pem string, pass string) (*PrivateKey, error) {
 }
 
 func (sk *PrivateKey) GetPEM(cipher string, pass string) (string, error) {
-	ccipher := C.CString(cipher)
-	defer C.free(unsafe.Pointer(ccipher))
-	cpass := C.CString(pass)
-	defer C.free(unsafe.Pointer(cpass))
 
 	bio := C.BIO_new(C.BIO_s_mem())
 	if bio == nil {
@@ -774,18 +770,32 @@ func (sk *PrivateKey) GetPEM(cipher string, pass string) (string, error) {
 	}
 	defer C.BIO_free(bio)
 
-	enc := C.EVP_get_cipherbyname(ccipher)
-	if enc == nil {
-		return "", GetErrors()
-	}
+	if cipher == "" && pass == "" {
+		/* FIXME: PKCS #5 can not use SM4 */
+		if 1 != C.PEM_write_bio_PrivateKey(bio, sk.pkey,
+			nil, nil, C.int(0), nil, nil) {
+			C.ERR_print_errors_fp(C.stderr)
+			return "", GetErrors()
+		}
 
-	/* FIXME: PKCS #5 can not use SM4 */
-	if 1 != C.PEM_write_bio_PrivateKey(bio, sk.pkey,
-		C.EVP_des_ede3_cbc(), nil, C.int(0), nil, unsafe.Pointer(cpass)) {
-		C.ERR_print_errors_fp(C.stderr)
-		return "", GetErrors()
-	}
+	} else {
+		ccipher := C.CString(cipher)
+		defer C.free(unsafe.Pointer(ccipher))
+		cpass := C.CString(pass)
+		defer C.free(unsafe.Pointer(cpass))
 
+		enc := C.EVP_get_cipherbyname(ccipher)
+		if enc == nil {
+			return "", GetErrors()
+		}
+
+		/* FIXME: PKCS #5 can not use SM4 */
+		if 1 != C.PEM_write_bio_PrivateKey(bio, sk.pkey,
+			C.EVP_des_ede3_cbc(), nil, C.int(0), nil, unsafe.Pointer(cpass)) {
+			C.ERR_print_errors_fp(C.stderr)
+			return "", GetErrors()
+		}
+	}
 	var p *C.char
 	len := C._BIO_get_mem_data(bio, &p)
 	if len <= 0 {

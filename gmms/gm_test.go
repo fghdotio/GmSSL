@@ -53,7 +53,9 @@ func TestSM2GenSignVerify(t *testing.T) {
 	// 	t.Fatal(err)
 	// }
 	// fmt.Printf("sm2 private string (with both private key and public key):\n%s\n\n", sm2skString)
-	sm2skPEM, err := sm2sk.GetPEM("SMS4", "password")
+
+	// sm2skPEM, err := sm2sk.GetPEM("SMS4", "password")
+	sm2skPEM, err := sm2sk.GetPEM("", "")
 	if err != nil {
 		t.Fatal(err)
 	}
