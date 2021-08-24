@@ -1,9 +1,19 @@
-package gmms
+package gmssl
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/rand"
+	"unsafe"
+
+	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"testing"
+
+	"github.com/hyperledger/fabric/crypto"
+	"github.com/hyperledger/fabric/gm/gmsm"
+	gmsmX509 "github.com/hyperledger/fabric/x509/gmsm"
 )
 
 func TestSM3(t *testing.T) {
@@ -37,7 +47,43 @@ func TestSM3(t *testing.T) {
 	t.Logf("sm3(\"abc\") = %x\n", sm3Digest)
 }
 
-func TestSM2GenSignVerify(t *testing.T) {
+func TestKeyGen(t *testing.T) {
+	sm2KeyGenArgs := [][2]string{
+		{"ec_paramgen_curve", "sm2p256v1"},
+		{"ec_param_enc", "named_curve"},
+	}
+	sm2sk, err := GeneratePrivateKey("EC", sm2KeyGenArgs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm2pk, err := sm2sk.GetPublicKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sm2pkString, err := sm2pk.GetText()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sm2pkPEM, err := sm2sk.GetPublicKeyPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm2pkAlt, err := NewPublicKeyFromPEM(sm2pkPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm2pkStringAlt, err := sm2pkAlt.GetText()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sm2pkString != sm2pkStringAlt {
+		t.Fatal("TestPublicKeyGen error")
+	}
+}
+
+func TestSM2SignVerify(t *testing.T) {
 	// SM2 key pair operations
 	sm2KeyGenArgs := [][2]string{
 		{"ec_paramgen_curve", "sm2p256v1"},
@@ -48,18 +94,16 @@ func TestSM2GenSignVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// sm2skString, err := sm2sk.GetText()
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
-	// fmt.Printf("sm2 private string (with both private key and public key):\n%s\n\n", sm2skString)
-
-	// sm2skPEM, err := sm2sk.GetPEM("SMS4", "password")
+	sm2skString, err := sm2sk.GetText()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("sm2 private string (with both private key and public key):\n%s\n\n", sm2skString)
 	sm2skPEM, err := sm2sk.GetPEM("", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Printf("sm2 encrypted private key pem:\n%s\n", sm2skPEM)
+	fmt.Printf("sm2 private key pem:\n%s\n", sm2skPEM)
 	sm2pkPEM, err := sm2sk.GetPublicKeyPEM()
 	if err != nil {
 		t.Fatal(err)
@@ -70,18 +114,29 @@ func TestSM2GenSignVerify(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// sm2pkString, err := sm2pk.GetText()
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
+
+	sm2pkString, err := sm2pk.GetText()
+	if err != nil {
+		t.Fatal(err)
+	}
 	sm2pkPEMcopy, err := sm2pk.GetPEM()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// fmt.Println(sm2pkString)
+	fmt.Println("sm2 public key string", sm2pkString)
 	if sm2pkPEMcopy != sm2pkPEM {
 		t.Fatal("public key not identical")
 	}
+	// block, _ := pem.Decode([]byte(sm2pkPEM))
+	// if block == nil {
+	// 	t.Fatal("BIO_new_mem_buf")
+	// }
+	// fmt.Printf("%#v\n", block)
+	// cert, err := sm2.ParseCertificate(block.Bytes)
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	// fmt.Printf("cert: %#v\n", cert)
 
 	// SM2 sign/verification
 	// #define SM2_DEFAULT_ID_GMT09			"1234567812345678"
@@ -173,41 +228,99 @@ func TestEncryptDecrypt(t *testing.T) {
 	fmt.Println()
 }
 
-func TestPublicKeyGen(t *testing.T) {
-	sm2KeyGenArgs := [][2]string{
-		{"ec_paramgen_curve", "sm2p256v1"},
-		{"ec_param_enc", "named_curve"},
-	}
-	sm2sk, err := GeneratePrivateKey("EC", sm2KeyGenArgs, nil)
+func TestSign(t *testing.T) {
+	k, err := getPrivateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sm2pk, err := sm2sk.GetPublicKey()
+	sk, ok := k.(*PrivateKey)
+	if !ok {
+		t.Fatal("not ok")
+	}
+	pk2, err := sk.GetPublicKey()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sm2pkString, err := sm2pk.GetText()
-	if err != nil {
-		t.Fatal(err)
-	}
+	fmt.Println(pk2)
 
-	sm2pkPEM, err := sm2sk.GetPublicKeyPEM()
+	bss, err := NewSm2().Sign(sk, rand.Reader, []byte("hello"), nil)
+	// bss, err := sk.Sign("sm2sign", []byte("hello"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sm2pkAlt, err := NewPublicKeyFromPEM(sm2pkPEM)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sm2pkStringAlt, err := sm2pkAlt.GetText()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if sm2pkString != sm2pkStringAlt {
-		t.Fatal("TestPublicKeyGen error")
-	}
-	// fmt.Printf("%s\n", sm2pkString)
+	fmt.Println(bss)
 }
 
-func TestLoadPublicKeyFromPEM(t *testing.T) {
+func getPrivateKey() (interface{}, error) {
+	bs, err := ioutil.ReadFile("/home/ubuntu/go/src/github.com/hyperledger/fabric-samples/test-network-simple/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/msp/keystore/c165c3dbe0809ace47de9709a99167728c9b1f4098037e5b02f75d5a70139955_sk")
+	if err != nil {
+		return nil, err
+	}
+	// fmt.Println(string(bs))
+	sk, err := NewPrivateKeyFromPEM(string(bs), "")
+	if err != nil {
+		return nil, err
+	}
+	return sk, nil
+}
+
+func TestCrossSignVerify(t *testing.T) {
+	skFile := "/home/ubuntu/go/src/github.com/hyperledger/fabric-samples/test-network-simple/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/msp/keystore/af366d1d06f97165be19ce6f76a2cece8a65620923537c621beaf21f8fde1ff2_sk"
+	pkFile := "/home/ubuntu/go/src/github.com/hyperledger/fabric-samples/test-network-simple/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/msp/signcerts/peer0.org1.example.com-cert.pem"
+
+	// gmssl 库解析出私钥
+	skBs, err := ioutil.ReadFile(skFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gmsslSk, err := NewPrivateKeyFromPEM(string(skBs), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gmsslSig, err := NewSm2().Sign(gmsslSk, rand.Reader, []byte("hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// gmsm 解析公钥
+	certBs, err := ioutil.ReadFile(pkFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb, _ := pem.Decode(certBs)
+	if pb == nil {
+		t.Fatal("pem block is nil")
+	}
+	cert, err := gmsmX509.NewX509().ParseCertificate(pb.Bytes)
+	var pk *crypto.PublicKey
+	switch pkimpl := cert.PublicKey.(type) {
+	case *crypto.PublicKey:
+		pk = pkimpl
+	case *ecdsa.PublicKey:
+		pk = (*crypto.PublicKey)(unsafe.Pointer(pkimpl))
+	default:
+		t.Fatal("bad public key")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(gmsm.NewSm2().Verify(pk, []byte("hello"), gmsslSig))
+
+	// gmsm 库解析出私钥
+	gmsmSk, err := gmsm.LoadPrivateKeyFromPem(skFile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gmsmSig, err := gmsm.NewSm2().Sign(gmsmSk, rand.Reader, []byte("hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkDER, err := gmsmX509.NewX509().MarshalPKIXPublicKey(pk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gmsslPk, err := LoadPublicKeyFromDER(pkDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(NewSm2().Verify(gmsslPk, []byte("hello"), gmsmSig))
 }

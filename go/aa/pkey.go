@@ -46,9 +46,12 @@
  * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package gmms
+package gmssl
 
 /*
+#cgo CFLAGS: -I/usr/local/gmssl/include
+#cgo LDFLAGS: -L/usr/local/gmssl/lib -lssl -lcrypto -ldl
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -484,72 +487,6 @@ end:
 	return ret;
 }
 
-unsigned char *sk_sign(EVP_PKEY *sk, const char *alg, const unsigned char *dgst,
-	size_t dgstlen, size_t *siglen, ENGINE *e) {
-	unsigned char *ret = NULL;
-	EVP_PKEY_CTX *ctx = NULL;
-	unsigned char *sig = NULL;
-
-	if (!(ctx = EVP_PKEY_CTX_new(sk, e))) {
-		return NULL;
-	}
-	if (EVP_PKEY_sign_init(ctx) <= 0) {
-		goto end;
-	}
-	if (EVP_PKEY_id(sk) == EVP_PKEY_EC && EC_GROUP_get_curve_name(
-		EC_KEY_get0_group(EVP_PKEY_get0_EC_KEY(sk))) == NID_sm2p256v1) {
-		if (EVP_PKEY_CTX_set_ec_scheme(ctx, NID_sm_scheme) <= 0) {
-			goto end;
-		}
-	}
-	if (EVP_PKEY_size(sk) <= 0) {
-		goto end;
-	}
-	if (!(sig = OPENSSL_zalloc(EVP_PKEY_size(sk)))) {
-		goto end;
-	}
-	*siglen = EVP_PKEY_size(sk);
-	if (EVP_PKEY_sign(ctx, sig, siglen, dgst, dgstlen) <= 0) {
-		goto end;
-	}
-	ret = sig;
-	sig = NULL;
-end:
-	EVP_PKEY_CTX_free(ctx);
-	OPENSSL_free(sig);
-	return ret;
-}
-
-int pk_verify(EVP_PKEY *pk, const char *alg, const unsigned char *dgst,
-	size_t dgstlen, const unsigned char *sig, size_t siglen, ENGINE *e) {
-	int ret = -1;
-	EVP_PKEY_CTX *ctx = NULL;
-
-	if (!(ctx = EVP_PKEY_CTX_new(pk, e))) {
-		printf("%s %d: error\n", __FILE__, __LINE__);
-		goto end;
-	}
-	if (!EVP_PKEY_verify_init(ctx)) {
-		printf("%s %d: error\n", __FILE__, __LINE__);
-		goto end;
-	}
-
-	if (EVP_PKEY_id(pk) == EVP_PKEY_EC && EC_GROUP_get_curve_name(
-		EC_KEY_get0_group(EVP_PKEY_get0_EC_KEY(pk))) == NID_sm2p256v1) {
-		if (EVP_PKEY_CTX_set_ec_scheme(ctx, NID_sm_scheme) <= 0) {
-			goto end;
-		}
-	}
-	if ((ret = EVP_PKEY_verify(ctx, sig, siglen, dgst, dgstlen)) <= 0) {
-		printf("ret = %d\n", ret);
-		ERR_print_errors_fp(stderr);
-		goto end;
-	}
-end:
-	EVP_PKEY_CTX_free(ctx);
-	return ret;
-}
-
 unsigned char *sk_derive(EVP_PKEY *sk, const char *alg, EVP_PKEY *peer,
 	size_t *outlen, ENGINE *e) {
 	return NULL;
@@ -598,86 +535,12 @@ func GetSignAlgorithmNames(pkey string) ([]string, error) {
 	}
 }
 
-func GetPublicKeyEncryptionNames(pkey string) ([]string, error) {
-	if pkey == "RSA" {
-		return []string{
-			"RSAES-OAEP",
-		}, nil
-	} else if pkey == "EC" {
-		return []string{
-			"ecies-recommendedParameters",
-			"ecies-specifiedParameters",
-			"ecies-with-x9-63-sha1-xor-hmac",
-			"ecies-with-x9-63-sha256-xor-hmac",
-			"ecies-with-x9-63-sha512-xor-hmac",
-			"ecies-with-x9-63-sha1-aes128-cbc-hmac",
-			"ecies-with-x9-63-sha256-aes128-cbc-hmac",
-			"ecies-with-x9-63-sha512-aes256-cbc-hmac",
-			"ecies-with-x9-63-sha256-aes128-ctr-hmac",
-			"ecies-with-x9-63-sha512-aes256-ctr-hmac",
-			"ecies-with-x9-63-sha256-aes128-cbc-hmac-half",
-			"ecies-with-x9-63-sha512-aes256-cbc-hmac-half",
-			"ecies-with-x9-63-sha256-aes128-ctr-hmac-half",
-			"ecies-with-x9-63-sha512-aes256-ctr-hmac-half",
-			"ecies-with-x9-63-sha1-aes128-cbc-cmac",
-			"ecies-with-x9-63-sha256-aes128-cbc-cmac",
-			"ecies-with-x9-63-sha512-aes256-cbc-cmac",
-			"ecies-with-x9-63-sha256-aes128-ctr-cmac",
-			"ecies-with-x9-63-sha512-aes256-ctr-cmac",
-			"sm2encrypt-with-sm3",
-			"sm2encrypt-with-sha1",
-			"sm2encrypt-with-sha256",
-			"sm2encrypt-with-sha512",
-		}, nil
-	} else {
-		return nil, errors.New("Invalid public key algorithm")
-	}
-}
-
-func GetDeriveKeyAlgorithmNames(pkey string) ([]string, error) {
-	if pkey == "EC" {
-		return []string{
-			"sm2exchange",
-		}, nil
-	} else if pkey == "DH" {
-		return []string{
-			"dhSinglePass-stdDH-sha1kdf-scheme",
-			"dhSinglePass-stdDH-sha224kdf-scheme",
-			"dhSinglePass-stdDH-sha256kdf-scheme",
-			"dhSinglePass-stdDH-sha384kdf-scheme",
-			"dhSinglePass-stdDH-sha512kdf-scheme",
-			"dhSinglePass-cofactorDH-sha1kdf-scheme",
-			"dhSinglePass-cofactorDH-sha224kdf-scheme",
-			"dhSinglePass-cofactorDH-sha256kdf-scheme",
-			"dhSinglePass-cofactorDH-sha384kdf-scheme",
-			"dhSinglePass-cofactorDH-sha512kdf-scheme",
-			"dhKeyAgreement",
-		}, nil
-	} else {
-		return nil, errors.New("No algorithm supported")
-	}
-}
-
-type PublicKey struct {
-	pkey *C.EVP_PKEY
-}
-
-type PrivateKey struct {
-	pkey *C.EVP_PKEY
-}
-
 func GeneratePrivateKey(alg string, args [][2]string, eng *Engine) (*PrivateKey, error) {
 	calg := C.CString(alg)
 	defer C.free(unsafe.Pointer(calg))
 
 	ctx := C.new_pkey_keygen_ctx(calg, nil)
 	defer C.EVP_PKEY_CTX_free(ctx)
-
-	/*
-		if eng != nil {
-			ctx := C.new_pkey_keygen_ctx(calg, eng.engine)
-		}
-	*/
 
 	if ctx == nil {
 		return nil, GetErrors()
@@ -805,19 +668,6 @@ func (sk *PrivateKey) GetPEM(cipher string, pass string) (string, error) {
 	return C.GoString(p)[:len], nil
 }
 
-// 包装，暴露出不同方法
-func (sk *PrivateKey) GetPublicKey() (*PublicKey, error) {
-	pkey := sk.pkey
-	if pkey == nil {
-		return nil, GetErrors()
-	}
-	pk := &PublicKey{pkey}
-	runtime.SetFinalizer(pk, func(pk *PublicKey) {
-		C.EVP_PKEY_free(pk.pkey)
-	})
-	return pk, nil
-}
-
 func (sk *PrivateKey) GetPublicKeyPEM() (string, error) {
 	bio := C.BIO_new(C.BIO_s_mem())
 	if bio == nil {
@@ -932,32 +782,6 @@ func (sk *PrivateKey) Decrypt(alg string, in []byte, eng *Engine) ([]byte, error
 	return C.GoBytes(unsafe.Pointer(out), C.int(outlen)), nil
 }
 
-func (sk *PrivateKey) Sign(alg string, dgst []byte, eng *Engine) ([]byte, error) {
-	calg := C.CString(alg)
-	defer C.free(unsafe.Pointer(calg))
-	var siglen C.size_t
-	sig := C.sk_sign(sk.pkey, calg, (*C.uchar)(&dgst[0]),
-		C.size_t(len(dgst)), &siglen, nil)
-	if sig == nil {
-		C.ERR_print_errors_fp(C.stderr)
-		return nil, GetErrors()
-	}
-	defer C.free(unsafe.Pointer(sig))
-	return C.GoBytes(unsafe.Pointer(sig), C.int(siglen)), nil
-}
-
-func (pk *PublicKey) Verify(alg string, dgst, sig []byte, eng *Engine) error {
-	calg := C.CString(alg)
-	defer C.free(unsafe.Pointer(calg))
-
-	if 1 != C.pk_verify(pk.pkey, calg, (*C.uchar)(&dgst[0]), C.size_t(len(dgst)),
-		(*C.uchar)(&sig[0]), C.size_t(len(sig)), nil) {
-		C.ERR_print_errors_fp(C.stderr)
-		return GetErrors()
-	}
-	return nil
-}
-
 func (sk *PrivateKey) DeriveKey(alg string, peer PublicKey, eng *Engine) ([]byte, error) {
 	calg := C.CString(alg)
 	defer C.free(unsafe.Pointer(calg))
@@ -968,21 +792,6 @@ func (sk *PrivateKey) DeriveKey(alg string, peer PublicKey, eng *Engine) ([]byte
 	}
 	defer C.free(unsafe.Pointer(key))
 	return C.GoBytes(unsafe.Pointer(key), C.int(keylen)), nil
-}
-
-func (pk *PublicKey) ComputeSM2IDDigest(id string) ([]byte, error) {
-	if C.EVP_PKEY_EC != C.EVP_PKEY_id(pk.pkey) {
-		return nil, errors.New("Invalid public key type")
-	}
-	cid := C.CString(id)
-	defer C.free(unsafe.Pointer(cid))
-	outbuf := make([]byte, 64)
-	outlen := C.size_t(len(outbuf))
-	if 1 != C.SM2_compute_id_digest(C.EVP_sm3(), cid, C.size_t(len(id)),
-		(*C.uchar)(&outbuf[0]), &outlen, C.EVP_PKEY_get0_EC_KEY(pk.pkey)) {
-		return nil, GetErrors()
-	}
-	return outbuf[:32], nil
 }
 
 func (sk *PrivateKey) ComputeSM2IDDigest(id string) ([]byte, error) {
@@ -998,4 +807,19 @@ func (sk *PrivateKey) ComputeSM2IDDigest(id string) ([]byte, error) {
 		return nil, GetErrors()
 	}
 	return outbuf[:32], nil
+}
+
+func (sk *PrivateKey) GetPublicKey() (*PublicKey, error) {
+
+	pkey := sk.pkey
+	if pkey == nil {
+		return nil, GetErrors()
+	}
+	pk := &PublicKey{pkey}
+	// !!! TODO: double free or corruption
+	// runtime.SetFinalizer(pk, func(pk *PublicKey) {
+	// 	C.EVP_PKEY_free(pk.pkey)
+	// })
+	return pk, nil
+
 }
